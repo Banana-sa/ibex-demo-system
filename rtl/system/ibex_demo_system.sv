@@ -4,7 +4,7 @@
 
 // The Ibex demo system, which instantiates and connects the following blocks:
 // - Memory bus.
-// - Ibex top module.
+// - CV32E40PX core (replacing Ibex).
 // - RAM memory to contain code and data.
 // - GPIO driving logic.
 // - UART for serial communication.
@@ -17,7 +17,6 @@ module ibex_demo_system #(
   parameter int                 PwmWidth       = 12,
   parameter int unsigned        ClockFrequency = 50_000_000,
   parameter int unsigned        BaudRate       = 115_200,
-  parameter ibex_pkg::regfile_e RegFile        = ibex_pkg::RegFileFPGA,
   parameter                     SRAMInitFile   = ""
 ) (
   input  logic clk_sys_i,
@@ -233,67 +232,110 @@ module ibex_demo_system #(
 
   assign rst_core_n = rst_sys_ni & ~ndmreset_req;
 
-  ibex_top #(
-    .RegFile         ( RegFile                                 ),
-    .MHPMCounterNum  ( 10                                      ),
-    .RV32M           ( ibex_pkg::RV32MFast                     ),
-    .RV32B           ( ibex_pkg::RV32BNone                     ),
-    .DbgTriggerEn    ( DbgTriggerEn                            ),
-    .DbgHwBreakNum   ( DbgHwBreakNum                           ),
-    .DmHaltAddr      ( DEBUG_START + dm::HaltAddress[31:0]     ),
-    .DmExceptionAddr ( DEBUG_START + dm::ExceptionAddress[31:0])
+  // CV32E40PX interrupt bus - combining timer and UART interrupts
+  logic [31:0] cv32_irq_bus;
+  assign cv32_irq_bus = {19'b0, timer_irq, 11'b0, uart_irq};
+
+  // CV32E40PX CORE-V-XIF signals (tied off - not used)
+  logic                                         x_compressed_valid;
+  logic                                         x_compressed_ready;
+  cv32e40px_core_v_xif_pkg::x_compressed_req_t  x_compressed_req;
+  cv32e40px_core_v_xif_pkg::x_compressed_resp_t x_compressed_resp;
+  logic                                         x_issue_valid;
+  logic                                         x_issue_ready;
+  cv32e40px_core_v_xif_pkg::x_issue_req_t       x_issue_req;
+  cv32e40px_core_v_xif_pkg::x_issue_resp_t      x_issue_resp;
+  logic                                         x_commit_valid;
+  cv32e40px_core_v_xif_pkg::x_commit_t          x_commit;
+  logic                                         x_mem_valid;
+  logic                                         x_mem_ready;
+  cv32e40px_core_v_xif_pkg::x_mem_req_t         x_mem_req;
+  cv32e40px_core_v_xif_pkg::x_mem_resp_t        x_mem_resp;
+  logic                                         x_mem_result_valid;
+  cv32e40px_core_v_xif_pkg::x_mem_result_t      x_mem_result;
+  logic                                         x_result_valid;
+  logic                                         x_result_ready;
+  cv32e40px_core_v_xif_pkg::x_result_t          x_result;
+
+  // Tie off CORE-V-XIF inputs
+  assign x_compressed_ready = 1'b0;
+  assign x_compressed_resp  = '0;
+  assign x_issue_ready      = 1'b0;
+  assign x_issue_resp       = '0;
+  assign x_mem_valid        = 1'b0;
+  assign x_mem_req          = '0;
+  assign x_result_valid     = 1'b0;
+  assign x_result           = '0;
+
+  cv32e40px_top #(
+    .COREV_X_IF       ( 0  ),
+    .COREV_PULP       ( 0  ),
+    .COREV_CLUSTER    ( 0  ),
+    .FPU              ( 0  ),
+    .FPU_ADDMUL_LAT   ( 0  ),
+    .FPU_OTHERS_LAT   ( 0  ),
+    .ZFINX            ( 0  ),
+    .NUM_MHPMCOUNTERS ( 10 )
   ) u_top (
     .clk_i (clk_sys_i),
     .rst_ni(rst_core_n),
 
-    .test_en_i  ('b0),
-    .scan_rst_ni(1'b1),
-    .ram_cfg_i  ('b0),
+    .pulp_clock_en_i(1'b1),
+    .scan_cg_en_i   (1'b0),
 
-    .hart_id_i  (32'b0),
-    // First instruction executed is at 0x0 + 0x80.
-    .boot_addr_i(32'h00100000),
+    .boot_addr_i        (32'h00100000),
+    .mtvec_addr_i       (32'h00100000),
+    .dm_halt_addr_i     (DEBUG_START + dm::HaltAddress[31:0]),
+    .hart_id_i          (32'b0),
+    .dm_exception_addr_i(DEBUG_START + dm::ExceptionAddress[31:0]),
 
-    .instr_req_o       (core_instr_req),
-    .instr_gnt_i       (core_instr_gnt),
-    .instr_rvalid_i    (core_instr_rvalid),
-    .instr_addr_o      (core_instr_addr),
-    .instr_rdata_i     (core_instr_rdata),
-    .instr_rdata_intg_i('0),
-    .instr_err_i       ('0),
+    .instr_req_o   (core_instr_req),
+    .instr_gnt_i   (core_instr_gnt),
+    .instr_rvalid_i(core_instr_rvalid),
+    .instr_addr_o  (core_instr_addr),
+    .instr_rdata_i (core_instr_rdata),
 
-    .data_req_o       (host_req[CoreD]),
-    .data_gnt_i       (host_gnt[CoreD]),
-    .data_rvalid_i    (host_rvalid[CoreD]),
-    .data_we_o        (host_we[CoreD]),
-    .data_be_o        (host_be[CoreD]),
-    .data_addr_o      (host_addr[CoreD]),
-    .data_wdata_o     (host_wdata[CoreD]),
-    .data_wdata_intg_o(),
-    .data_rdata_i     (host_rdata[CoreD]),
-    .data_rdata_intg_i('0),
-    .data_err_i       (host_err[CoreD]),
+    .data_req_o   (host_req[CoreD]),
+    .data_gnt_i   (host_gnt[CoreD]),
+    .data_rvalid_i(host_rvalid[CoreD]),
+    .data_we_o    (host_we[CoreD]),
+    .data_be_o    (host_be[CoreD]),
+    .data_addr_o  (host_addr[CoreD]),
+    .data_wdata_o (host_wdata[CoreD]),
+    .data_rdata_i (host_rdata[CoreD]),
 
-    .irq_software_i(1'b0),
-    .irq_timer_i   (timer_irq),
-    .irq_external_i(1'b0),
-    .irq_fast_i    ({14'b0, uart_irq}),
-    .irq_nm_i      (1'b0),
+    // CORE-V-XIF interface (tied off)
+    .x_compressed_valid_o(x_compressed_valid),
+    .x_compressed_ready_i(x_compressed_ready),
+    .x_compressed_req_o  (x_compressed_req),
+    .x_compressed_resp_i (x_compressed_resp),
+    .x_issue_valid_o     (x_issue_valid),
+    .x_issue_ready_i     (x_issue_ready),
+    .x_issue_req_o       (x_issue_req),
+    .x_issue_resp_i      (x_issue_resp),
+    .x_commit_valid_o    (x_commit_valid),
+    .x_commit_o          (x_commit),
+    .x_mem_valid_i       (x_mem_valid),
+    .x_mem_ready_o       (x_mem_ready),
+    .x_mem_req_i         (x_mem_req),
+    .x_mem_resp_o        (x_mem_resp),
+    .x_mem_result_valid_o(x_mem_result_valid),
+    .x_mem_result_o      (x_mem_result),
+    .x_result_valid_i    (x_result_valid),
+    .x_result_ready_o    (x_result_ready),
+    .x_result_i          (x_result),
 
-    .scramble_key_valid_i('0),
-    .scramble_key_i      ('0),
-    .scramble_nonce_i    ('0),
-    .scramble_req_o      (),
+    .irq_i    (cv32_irq_bus),
+    .irq_ack_o(),
+    .irq_id_o (),
 
-    .debug_req_i        (dm_debug_req),
-    .crash_dump_o       (),
-    .double_fault_seen_o(),
+    .debug_req_i      (dm_debug_req),
+    .debug_havereset_o(),
+    .debug_running_o  (),
+    .debug_halted_o   (),
 
-    .fetch_enable_i        ('1),
-    .alert_minor_o         (),
-    .alert_major_internal_o(),
-    .alert_major_bus_o     (),
-    .core_sleep_o          ()
+    .fetch_enable_i('1),
+    .core_sleep_o  ()
   );
 
   ram_2p #(
@@ -499,13 +541,16 @@ module ibex_demo_system #(
     export "DPI-C" function mhpmcounter_num;
 
     function automatic int unsigned mhpmcounter_num();
-      return u_top.u_ibex_core.cs_registers_i.MHPMCounterNum;
+      // CV32E40PX has NUM_MHPMCOUNTERS parameter (10 in this case)
+      return 10;
     endfunction
 
     export "DPI-C" function mhpmcounter_get;
 
     function automatic longint unsigned mhpmcounter_get(int index);
-      return u_top.u_ibex_core.cs_registers_i.mhpmcounter[index];
+      // CV32E40PX counter access - note the different hierarchy
+      // The counters are in core_i.cs_registers_i
+      return u_top.core_i.cs_registers_i.mhpmcounter_q[index];
     endfunction
   `endif
 endmodule
