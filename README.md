@@ -1,16 +1,15 @@
 # Ibex Demo System
 
-![Ibex demo system block diagram](doc/IbexDemoSystemBlockDiagram.png "Ibex demo system block diagram with in the center an Ibex processor connected by a memory bus to the RAM, GPIO, SPI, UART and debug module. Switches, buttons and LEDs are connected to the GPIO. The LCD is driven by SPI. The UART is used for a serial console. Finally, the debug module is used to drive the JTAG.")
+![Ibex demo system block diagram](doc/IbexDemoSystemBlockDiagram.png "Ibex demo system block diagram with CV32E40PX processor connected by a memory bus to the RAM, two Core2AXI bridges for user-defined AXI slaves, UART, PWM, Timer, and debug module. The Core2AXI bridges expose AXI interfaces for users to connect their own custom peripherals. The UART is used for a serial console. Finally, the debug module is used to drive the JTAG.")
 
 Ibex Demo System is an example RISC-V SoC primarily targeting the Arty A7-35T FPGA board.
-It comprises the [lowRISC Ibex core](https://www.github.com/lowrisc/ibex) along with the following features:
+It comprises the [CV32E40PX core](https://github.com/openhwgroup/cv32e40p) (replacing the original Ibex core) along with the following features:
 
 * RISC-V debug support (using the [PULP RISC-V Debug Module](https://github.com/pulp-platform/riscv-dbg))
 * UART
-* GPIO
+* Two Core2AXI bridges ([core2axi](https://github.com/Banana-sa/core2axi)) - allowing users to connect custom AXI slaves
 * PWM
 * Timer
-* SPI
 * A basic peripheral to write ASCII output to a file and halt simulation from software
 
 Support has been added for several FPGA development boards in addition to the Arty A7-35T.

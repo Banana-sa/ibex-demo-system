@@ -6,30 +6,120 @@
 // - Memory bus.
 // - CV32E40PX core (replacing Ibex).
 // - RAM memory to contain code and data.
-// - GPIO driving logic.
+// - Two core2axi bridges for user-defined AXI slaves.
 // - UART for serial communication.
 // - Timer.
 // - Debug module.
-// - SPI for driving LCD screen.
+// - PWM for LED control.
 module ibex_demo_system #(
-  parameter int                 GpiWidth       = 8,
-  parameter int                 GpoWidth       = 16,
   parameter int                 PwmWidth       = 12,
   parameter int unsigned        ClockFrequency = 50_000_000,
   parameter int unsigned        BaudRate       = 115_200,
-  parameter                     SRAMInitFile   = ""
+  parameter                     SRAMInitFile   = "",
+  parameter int                 AXI4_ADDRESS_WIDTH = 32,
+  parameter int                 AXI4_RDATA_WIDTH   = 32,
+  parameter int                 AXI4_WDATA_WIDTH   = 32,
+  parameter int                 AXI4_ID_WIDTH      = 16,
+  parameter int                 AXI4_USER_WIDTH    = 10
 ) (
   input  logic clk_sys_i,
   input  logic rst_sys_ni,
 
-  input  logic [GpiWidth-1:0] gp_i,
-  output logic [GpoWidth-1:0] gp_o,
   output logic [PwmWidth-1:0] pwm_o,
   input  logic                uart_rx_i,
   output logic                uart_tx_o,
-  input  logic                spi_rx_i,
-  output logic                spi_tx_o,
-  output logic                spi_sck_o,
+
+  // Core2AXI 0 - AXI Master interface (replaces GPIO)
+  output logic [AXI4_ID_WIDTH-1:0]      core2axi0_aw_id_o,
+  output logic [AXI4_ADDRESS_WIDTH-1:0] core2axi0_aw_addr_o,
+  output logic [ 7:0]                   core2axi0_aw_len_o,
+  output logic [ 2:0]                   core2axi0_aw_size_o,
+  output logic [ 1:0]                   core2axi0_aw_burst_o,
+  output logic                          core2axi0_aw_lock_o,
+  output logic [ 3:0]                   core2axi0_aw_cache_o,
+  output logic [ 2:0]                   core2axi0_aw_prot_o,
+  output logic [ 3:0]                   core2axi0_aw_region_o,
+  output logic [AXI4_USER_WIDTH-1:0]    core2axi0_aw_user_o,
+  output logic [ 3:0]                   core2axi0_aw_qos_o,
+  output logic                          core2axi0_aw_valid_o,
+  input  logic                          core2axi0_aw_ready_i,
+  output logic [AXI4_WDATA_WIDTH-1:0]   core2axi0_w_data_o,
+  output logic [AXI4_WDATA_WIDTH/8-1:0] core2axi0_w_strb_o,
+  output logic                          core2axi0_w_last_o,
+  output logic [AXI4_USER_WIDTH-1:0]    core2axi0_w_user_o,
+  output logic                          core2axi0_w_valid_o,
+  input  logic                          core2axi0_w_ready_i,
+  input  logic [AXI4_ID_WIDTH-1:0]      core2axi0_b_id_i,
+  input  logic [ 1:0]                   core2axi0_b_resp_i,
+  input  logic                          core2axi0_b_valid_i,
+  input  logic [AXI4_USER_WIDTH-1:0]    core2axi0_b_user_i,
+  output logic                          core2axi0_b_ready_o,
+  output logic [AXI4_ID_WIDTH-1:0]      core2axi0_ar_id_o,
+  output logic [AXI4_ADDRESS_WIDTH-1:0] core2axi0_ar_addr_o,
+  output logic [ 7:0]                   core2axi0_ar_len_o,
+  output logic [ 2:0]                   core2axi0_ar_size_o,
+  output logic [ 1:0]                   core2axi0_ar_burst_o,
+  output logic                          core2axi0_ar_lock_o,
+  output logic [ 3:0]                   core2axi0_ar_cache_o,
+  output logic [ 2:0]                   core2axi0_ar_prot_o,
+  output logic [ 3:0]                   core2axi0_ar_region_o,
+  output logic [AXI4_USER_WIDTH-1:0]    core2axi0_ar_user_o,
+  output logic [ 3:0]                   core2axi0_ar_qos_o,
+  output logic                          core2axi0_ar_valid_o,
+  input  logic                          core2axi0_ar_ready_i,
+  input  logic [AXI4_ID_WIDTH-1:0]      core2axi0_r_id_i,
+  input  logic [AXI4_RDATA_WIDTH-1:0]   core2axi0_r_data_i,
+  input  logic [ 1:0]                   core2axi0_r_resp_i,
+  input  logic                          core2axi0_r_last_i,
+  input  logic [AXI4_USER_WIDTH-1:0]    core2axi0_r_user_i,
+  input  logic                          core2axi0_r_valid_i,
+  output logic                          core2axi0_r_ready_o,
+
+  // Core2AXI 1 - AXI Master interface (replaces SPI)
+  output logic [AXI4_ID_WIDTH-1:0]      core2axi1_aw_id_o,
+  output logic [AXI4_ADDRESS_WIDTH-1:0] core2axi1_aw_addr_o,
+  output logic [ 7:0]                   core2axi1_aw_len_o,
+  output logic [ 2:0]                   core2axi1_aw_size_o,
+  output logic [ 1:0]                   core2axi1_aw_burst_o,
+  output logic                          core2axi1_aw_lock_o,
+  output logic [ 3:0]                   core2axi1_aw_cache_o,
+  output logic [ 2:0]                   core2axi1_aw_prot_o,
+  output logic [ 3:0]                   core2axi1_aw_region_o,
+  output logic [AXI4_USER_WIDTH-1:0]    core2axi1_aw_user_o,
+  output logic [ 3:0]                   core2axi1_aw_qos_o,
+  output logic                          core2axi1_aw_valid_o,
+  input  logic                          core2axi1_aw_ready_i,
+  output logic [AXI4_WDATA_WIDTH-1:0]   core2axi1_w_data_o,
+  output logic [AXI4_WDATA_WIDTH/8-1:0] core2axi1_w_strb_o,
+  output logic                          core2axi1_w_last_o,
+  output logic [AXI4_USER_WIDTH-1:0]    core2axi1_w_user_o,
+  output logic                          core2axi1_w_valid_o,
+  input  logic                          core2axi1_w_ready_i,
+  input  logic [AXI4_ID_WIDTH-1:0]      core2axi1_b_id_i,
+  input  logic [ 1:0]                   core2axi1_b_resp_i,
+  input  logic                          core2axi1_b_valid_i,
+  input  logic [AXI4_USER_WIDTH-1:0]    core2axi1_b_user_i,
+  output logic                          core2axi1_b_ready_o,
+  output logic [AXI4_ID_WIDTH-1:0]      core2axi1_ar_id_o,
+  output logic [AXI4_ADDRESS_WIDTH-1:0] core2axi1_ar_addr_o,
+  output logic [ 7:0]                   core2axi1_ar_len_o,
+  output logic [ 2:0]                   core2axi1_ar_size_o,
+  output logic [ 1:0]                   core2axi1_ar_burst_o,
+  output logic                          core2axi1_ar_lock_o,
+  output logic [ 3:0]                   core2axi1_ar_cache_o,
+  output logic [ 2:0]                   core2axi1_ar_prot_o,
+  output logic [ 3:0]                   core2axi1_ar_region_o,
+  output logic [AXI4_USER_WIDTH-1:0]    core2axi1_ar_user_o,
+  output logic [ 3:0]                   core2axi1_ar_qos_o,
+  output logic                          core2axi1_ar_valid_o,
+  input  logic                          core2axi1_ar_ready_i,
+  input  logic [AXI4_ID_WIDTH-1:0]      core2axi1_r_id_i,
+  input  logic [AXI4_RDATA_WIDTH-1:0]   core2axi1_r_data_i,
+  input  logic [ 1:0]                   core2axi1_r_resp_i,
+  input  logic                          core2axi1_r_last_i,
+  input  logic [AXI4_USER_WIDTH-1:0]    core2axi1_r_user_i,
+  input  logic                          core2axi1_r_valid_i,
+  output logic                          core2axi1_r_ready_o,
 
   input  logic        tck_i,    // JTAG test clock pad
   input  logic        tms_i,    // JTAG test mode select pad
@@ -41,9 +131,9 @@ module ibex_demo_system #(
   localparam logic [31:0] MEM_START     = 32'h00100000;
   localparam logic [31:0] MEM_MASK      = ~(MEM_SIZE-1);
 
-  localparam logic [31:0] GPIO_SIZE     =  4 * 1024; //  4 KiB
-  localparam logic [31:0] GPIO_START    = 32'h80000000;
-  localparam logic [31:0] GPIO_MASK     = ~(GPIO_SIZE-1);
+  localparam logic [31:0] CORE2AXI0_SIZE  =  4 * 1024; //  4 KiB (replaces GPIO)
+  localparam logic [31:0] CORE2AXI0_START = 32'h80000000;
+  localparam logic [31:0] CORE2AXI0_MASK  = ~(CORE2AXI0_SIZE-1);
 
   localparam logic [31:0] DEBUG_SIZE    = 64 * 1024; // 64 KiB
   localparam logic [31:0] DEBUG_START   = 32'h1a110000;
@@ -62,9 +152,9 @@ module ibex_demo_system #(
   localparam logic [31:0] PWM_MASK      = ~(PWM_SIZE-1);
   localparam int PwmCtrSize = 8;
 
-  parameter logic [31:0] SPI_SIZE       =  1 * 1024; //  1 KiB
-  parameter logic [31:0] SPI_START      = 32'h80004000;
-  parameter logic [31:0] SPI_MASK       = ~(SPI_SIZE-1);
+  localparam logic [31:0] CORE2AXI1_SIZE  =  4 * 1024; //  4 KiB (replaces SPI)
+  localparam logic [31:0] CORE2AXI1_START = 32'h80004000;
+  localparam logic [31:0] CORE2AXI1_MASK  = ~(CORE2AXI1_SIZE-1);
 
   parameter logic [31:0] SIM_CTRL_SIZE  =  1 * 1024; //  1 KiB
   parameter logic [31:0] SIM_CTRL_START = 32'h20000;
@@ -82,11 +172,11 @@ module ibex_demo_system #(
 
   typedef enum int {
     Ram,
-    Gpio,
+    Core2Axi0,
     Pwm,
     Uart,
     Timer,
-    Spi,
+    Core2Axi1,
     SimCtrl,
     DbgDev
   } bus_device_e;
@@ -149,20 +239,20 @@ module ibex_demo_system #(
   logic [31:0] cfg_device_addr_base [NrDevices];
   logic [31:0] cfg_device_addr_mask [NrDevices];
 
-  assign cfg_device_addr_base[Ram]     = MEM_START;
-  assign cfg_device_addr_mask[Ram]     = MEM_MASK;
-  assign cfg_device_addr_base[Gpio]    = GPIO_START;
-  assign cfg_device_addr_mask[Gpio]    = GPIO_MASK;
-  assign cfg_device_addr_base[Pwm]     = PWM_START;
-  assign cfg_device_addr_mask[Pwm]     = PWM_MASK;
-  assign cfg_device_addr_base[Uart]    = UART_START;
-  assign cfg_device_addr_mask[Uart]    = UART_MASK;
-  assign cfg_device_addr_base[Timer]   = TIMER_START;
-  assign cfg_device_addr_mask[Timer]   = TIMER_MASK;
-  assign cfg_device_addr_base[Spi]     = SPI_START;
-  assign cfg_device_addr_mask[Spi]     = SPI_MASK;
-  assign cfg_device_addr_base[SimCtrl] = SIM_CTRL_START;
-  assign cfg_device_addr_mask[SimCtrl] = SIM_CTRL_MASK;
+  assign cfg_device_addr_base[Ram]       = MEM_START;
+  assign cfg_device_addr_mask[Ram]       = MEM_MASK;
+  assign cfg_device_addr_base[Core2Axi0] = CORE2AXI0_START;
+  assign cfg_device_addr_mask[Core2Axi0] = CORE2AXI0_MASK;
+  assign cfg_device_addr_base[Pwm]       = PWM_START;
+  assign cfg_device_addr_mask[Pwm]       = PWM_MASK;
+  assign cfg_device_addr_base[Uart]      = UART_START;
+  assign cfg_device_addr_mask[Uart]      = UART_MASK;
+  assign cfg_device_addr_base[Timer]     = TIMER_START;
+  assign cfg_device_addr_mask[Timer]     = TIMER_MASK;
+  assign cfg_device_addr_base[Core2Axi1] = CORE2AXI1_START;
+  assign cfg_device_addr_mask[Core2Axi1] = CORE2AXI1_MASK;
+  assign cfg_device_addr_base[SimCtrl]   = SIM_CTRL_START;
+  assign cfg_device_addr_mask[SimCtrl]   = SIM_CTRL_MASK;
 
   if (DBG) begin : g_dbg_device_cfg
     assign cfg_device_addr_base[DbgDev] = DEBUG_START;
@@ -171,12 +261,12 @@ module ibex_demo_system #(
   end
 
   // Tie-off unused error signals.
-  assign device_err[Ram]     = 1'b0;
-  assign device_err[Gpio]    = 1'b0;
-  assign device_err[Pwm]     = 1'b0;
-  assign device_err[Uart]    = 1'b0;
-  assign device_err[Spi]     = 1'b0;
-  assign device_err[SimCtrl] = 1'b0;
+  assign device_err[Ram]       = 1'b0;
+  assign device_err[Core2Axi0] = 1'b0;
+  assign device_err[Pwm]       = 1'b0;
+  assign device_err[Uart]      = 1'b0;
+  assign device_err[Core2Axi1] = 1'b0;
+  assign device_err[SimCtrl]   = 1'b0;
 
   bus #(
     .NrDevices    ( NrDevices ),
@@ -362,23 +452,74 @@ module ibex_demo_system #(
     .b_rdata_o (mem_instr_rdata)
   );
 
-  gpio #(
-    .GpiWidth ( GpiWidth ),
-    .GpoWidth ( GpoWidth )
-  ) u_gpio (
-    .clk_i (clk_sys_i),
-    .rst_ni(rst_sys_ni),
+  // Core2AXI Bridge 0 (replaces GPIO)
+  // Users can connect their own AXI slave to this interface
+  core2axi #(
+    .AXI4_ADDRESS_WIDTH ( AXI4_ADDRESS_WIDTH ),
+    .AXI4_RDATA_WIDTH   ( AXI4_RDATA_WIDTH   ),
+    .AXI4_WDATA_WIDTH   ( AXI4_WDATA_WIDTH   ),
+    .AXI4_ID_WIDTH      ( AXI4_ID_WIDTH      ),
+    .AXI4_USER_WIDTH    ( AXI4_USER_WIDTH    ),
+    .REGISTERED_GRANT   ( "FALSE"            )
+  ) u_core2axi0 (
+    .clk_i  (clk_sys_i),
+    .rst_ni (rst_sys_ni),
 
-    .device_req_i   (device_req[Gpio]),
-    .device_addr_i  (device_addr[Gpio]),
-    .device_we_i    (device_we[Gpio]),
-    .device_be_i    (device_be[Gpio]),
-    .device_wdata_i (device_wdata[Gpio]),
-    .device_rvalid_o(device_rvalid[Gpio]),
-    .device_rdata_o (device_rdata[Gpio]),
+    // Core protocol interface (connected to system bus)
+    .data_req_i    (device_req[Core2Axi0]),
+    .data_gnt_o    (/* unused - combinational grant */),
+    .data_rvalid_o (device_rvalid[Core2Axi0]),
+    .data_addr_i   (device_addr[Core2Axi0]),
+    .data_we_i     (device_we[Core2Axi0]),
+    .data_be_i     (device_be[Core2Axi0]),
+    .data_rdata_o  (device_rdata[Core2Axi0]),
+    .data_wdata_i  (device_wdata[Core2Axi0]),
 
-    .gp_i,
-    .gp_o
+    // AXI Master interface
+    .aw_id_o     (core2axi0_aw_id_o),
+    .aw_addr_o   (core2axi0_aw_addr_o),
+    .aw_len_o    (core2axi0_aw_len_o),
+    .aw_size_o   (core2axi0_aw_size_o),
+    .aw_burst_o  (core2axi0_aw_burst_o),
+    .aw_lock_o   (core2axi0_aw_lock_o),
+    .aw_cache_o  (core2axi0_aw_cache_o),
+    .aw_prot_o   (core2axi0_aw_prot_o),
+    .aw_region_o (core2axi0_aw_region_o),
+    .aw_user_o   (core2axi0_aw_user_o),
+    .aw_qos_o    (core2axi0_aw_qos_o),
+    .aw_valid_o  (core2axi0_aw_valid_o),
+    .aw_ready_i  (core2axi0_aw_ready_i),
+    .w_data_o    (core2axi0_w_data_o),
+    .w_strb_o    (core2axi0_w_strb_o),
+    .w_last_o    (core2axi0_w_last_o),
+    .w_user_o    (core2axi0_w_user_o),
+    .w_valid_o   (core2axi0_w_valid_o),
+    .w_ready_i   (core2axi0_w_ready_i),
+    .b_id_i      (core2axi0_b_id_i),
+    .b_resp_i    (core2axi0_b_resp_i),
+    .b_valid_i   (core2axi0_b_valid_i),
+    .b_user_i    (core2axi0_b_user_i),
+    .b_ready_o   (core2axi0_b_ready_o),
+    .ar_id_o     (core2axi0_ar_id_o),
+    .ar_addr_o   (core2axi0_ar_addr_o),
+    .ar_len_o    (core2axi0_ar_len_o),
+    .ar_size_o   (core2axi0_ar_size_o),
+    .ar_burst_o  (core2axi0_ar_burst_o),
+    .ar_lock_o   (core2axi0_ar_lock_o),
+    .ar_cache_o  (core2axi0_ar_cache_o),
+    .ar_prot_o   (core2axi0_ar_prot_o),
+    .ar_region_o (core2axi0_ar_region_o),
+    .ar_user_o   (core2axi0_ar_user_o),
+    .ar_qos_o    (core2axi0_ar_qos_o),
+    .ar_valid_o  (core2axi0_ar_valid_o),
+    .ar_ready_i  (core2axi0_ar_ready_i),
+    .r_id_i      (core2axi0_r_id_i),
+    .r_data_i    (core2axi0_r_data_i),
+    .r_resp_i    (core2axi0_r_resp_i),
+    .r_last_i    (core2axi0_r_last_i),
+    .r_user_i    (core2axi0_r_user_i),
+    .r_valid_i   (core2axi0_r_valid_i),
+    .r_ready_o   (core2axi0_r_ready_o)
   );
 
   pwm_wrapper #(
@@ -420,27 +561,74 @@ module ibex_demo_system #(
     .uart_tx_o
   );
 
-  spi_top #(
-    .ClockFrequency ( ClockFrequency ),
-    .CPOL           ( 0          ),
-    .CPHA           ( 1          )
-  ) u_spi (
-    .clk_i (clk_sys_i),
-    .rst_ni(rst_sys_ni),
+  // Core2AXI Bridge 1 (replaces SPI)
+  // Users can connect their own AXI slave to this interface
+  core2axi #(
+    .AXI4_ADDRESS_WIDTH ( AXI4_ADDRESS_WIDTH ),
+    .AXI4_RDATA_WIDTH   ( AXI4_RDATA_WIDTH   ),
+    .AXI4_WDATA_WIDTH   ( AXI4_WDATA_WIDTH   ),
+    .AXI4_ID_WIDTH      ( AXI4_ID_WIDTH      ),
+    .AXI4_USER_WIDTH    ( AXI4_USER_WIDTH    ),
+    .REGISTERED_GRANT   ( "FALSE"            )
+  ) u_core2axi1 (
+    .clk_i  (clk_sys_i),
+    .rst_ni (rst_sys_ni),
 
-    .device_req_i   (device_req[Spi]),
-    .device_addr_i  (device_addr[Spi]),
-    .device_we_i    (device_we[Spi]),
-    .device_be_i    (device_be[Spi]),
-    .device_wdata_i (device_wdata[Spi]),
-    .device_rvalid_o(device_rvalid[Spi]),
-    .device_rdata_o (device_rdata[Spi]),
+    // Core protocol interface (connected to system bus)
+    .data_req_i    (device_req[Core2Axi1]),
+    .data_gnt_o    (/* unused - combinational grant */),
+    .data_rvalid_o (device_rvalid[Core2Axi1]),
+    .data_addr_i   (device_addr[Core2Axi1]),
+    .data_we_i     (device_we[Core2Axi1]),
+    .data_be_i     (device_be[Core2Axi1]),
+    .data_rdata_o  (device_rdata[Core2Axi1]),
+    .data_wdata_i  (device_wdata[Core2Axi1]),
 
-    .spi_rx_i(spi_rx_i), // Data received from SPI device.
-    .spi_tx_o(spi_tx_o), // Data transmitted to SPI device.
-    .sck_o   (spi_sck_o), // Serial clock pin.
-
-    .byte_data_o() // Unused.
+    // AXI Master interface
+    .aw_id_o     (core2axi1_aw_id_o),
+    .aw_addr_o   (core2axi1_aw_addr_o),
+    .aw_len_o    (core2axi1_aw_len_o),
+    .aw_size_o   (core2axi1_aw_size_o),
+    .aw_burst_o  (core2axi1_aw_burst_o),
+    .aw_lock_o   (core2axi1_aw_lock_o),
+    .aw_cache_o  (core2axi1_aw_cache_o),
+    .aw_prot_o   (core2axi1_aw_prot_o),
+    .aw_region_o (core2axi1_aw_region_o),
+    .aw_user_o   (core2axi1_aw_user_o),
+    .aw_qos_o    (core2axi1_aw_qos_o),
+    .aw_valid_o  (core2axi1_aw_valid_o),
+    .aw_ready_i  (core2axi1_aw_ready_i),
+    .w_data_o    (core2axi1_w_data_o),
+    .w_strb_o    (core2axi1_w_strb_o),
+    .w_last_o    (core2axi1_w_last_o),
+    .w_user_o    (core2axi1_w_user_o),
+    .w_valid_o   (core2axi1_w_valid_o),
+    .w_ready_i   (core2axi1_w_ready_i),
+    .b_id_i      (core2axi1_b_id_i),
+    .b_resp_i    (core2axi1_b_resp_i),
+    .b_valid_i   (core2axi1_b_valid_i),
+    .b_user_i    (core2axi1_b_user_i),
+    .b_ready_o   (core2axi1_b_ready_o),
+    .ar_id_o     (core2axi1_ar_id_o),
+    .ar_addr_o   (core2axi1_ar_addr_o),
+    .ar_len_o    (core2axi1_ar_len_o),
+    .ar_size_o   (core2axi1_ar_size_o),
+    .ar_burst_o  (core2axi1_ar_burst_o),
+    .ar_lock_o   (core2axi1_ar_lock_o),
+    .ar_cache_o  (core2axi1_ar_cache_o),
+    .ar_prot_o   (core2axi1_ar_prot_o),
+    .ar_region_o (core2axi1_ar_region_o),
+    .ar_user_o   (core2axi1_ar_user_o),
+    .ar_qos_o    (core2axi1_ar_qos_o),
+    .ar_valid_o  (core2axi1_ar_valid_o),
+    .ar_ready_i  (core2axi1_ar_ready_i),
+    .r_id_i      (core2axi1_r_id_i),
+    .r_data_i    (core2axi1_r_data_i),
+    .r_resp_i    (core2axi1_r_resp_i),
+    .r_last_i    (core2axi1_r_last_i),
+    .r_user_i    (core2axi1_r_user_i),
+    .r_valid_i   (core2axi1_r_valid_i),
+    .r_ready_o   (core2axi1_r_ready_o)
   );
 
   `ifdef VERILATOR
